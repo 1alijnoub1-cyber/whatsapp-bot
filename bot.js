@@ -7,16 +7,18 @@ const fs = require('fs');
 const EXCEL_FILE = 'data.xlsx';
 const SENT_SERIALS_FILE = 'sent_serials.json';
 
-// 🔴 أضف أرقامك المسموحة هنا 🔴
+// قائمة الأرقام المسموحة - أضف أرقامك هنا
 const ALLOWED_NUMBERS = [
-    '193759010680955@lid',     // استبدل برقمك الحقيقي
-    '193759010680955',   // استبدل برقمك الحقيقي
+    '964750xxxxxxx',     // استبدل برقمك
+    '193759010680955',   // استبدل برقمك
 ];
 
 // تحميل السيريالات المرسلة مسبقاً
 let sentSerials = new Set();
 if (fs.existsSync(SENT_SERIALS_FILE)) {
-    sentSerials = new Set(JSON.parse(fs.readFileSync(SENT_SERIALS_FILE)));
+    try {
+        sentSerials = new Set(JSON.parse(fs.readFileSync(SENT_SERIALS_FILE)));
+    } catch(e) {}
 }
 
 // دالة استخراج السيريال من الرسالة
@@ -28,28 +30,33 @@ function extractSerial(messageText) {
 
 // تحميل البيانات من الاكسل
 function loadTokenMap() {
-    const workbook = XLSX.readFile(EXCEL_FILE);
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet);
-    
-    const tokenMap = new Map();
-    
-    for (const row of rows) {
-        const serial1 = row['serial']?.toString().trim();
-        const token1 = row['token']?.toString().trim();
-        const serial2 = row['serial2']?.toString().trim();
-        const token2 = row['token2']?.toString().trim();
+    try {
+        const workbook = XLSX.readFile(EXCEL_FILE);
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet);
         
-        if (serial1 && token1 && !tokenMap.has(serial1)) {
-            tokenMap.set(serial1, token1);
+        const tokenMap = new Map();
+        
+        for (const row of rows) {
+            const serial1 = row['serial']?.toString().trim();
+            const token1 = row['token']?.toString().trim();
+            const serial2 = row['serial2']?.toString().trim();
+            const token2 = row['token2']?.toString().trim();
+            
+            if (serial1 && token1 && !tokenMap.has(serial1)) {
+                tokenMap.set(serial1, token1);
+            }
+            if (serial2 && token2 && !tokenMap.has(serial2)) {
+                tokenMap.set(serial2, token2);
+            }
         }
-        if (serial2 && token2 && !tokenMap.has(serial2)) {
-            tokenMap.set(serial2, token2);
-        }
+        
+        console.log(`Loaded ${tokenMap.size} serials from Excel file`);
+        return tokenMap;
+    } catch(e) {
+        console.error('Error loading Excel:', e.message);
+        return new Map();
     }
-    
-    console.log(`Loaded ${tokenMap.size} serials from Excel file`);
-    return tokenMap;
 }
 
 // حفظ السيريالات المرسلة
@@ -57,12 +64,31 @@ function saveSentSerials() {
     fs.writeFileSync(SENT_SERIALS_FILE, JSON.stringify([...sentSerials]));
 }
 
+// ========== إعدادات Chromium لحل مشكلة Railway ==========
+const chromiumPath = process.env.CHROME_BIN || '/usr/bin/chromium-browser';
+
+const client = new Client({ 
+    authStrategy: new LocalAuth(),
+    puppeteer: {
+        executablePath: chromiumPath,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu'
+        ]
+    }
+});
+// ============================================================
+
 // تشغيل البوت
 const tokenMap = loadTokenMap();
-const client = new Client({ authStrategy: new LocalAuth() });
 
 client.on('qr', qr => {
-    console.log('📱 Scan this QR code with WhatsApp');
+    console.log('📱 Scan this QR code with WhatsApp (Settings > Linked Devices)');
     qrcode.generate(qr, { small: true });
 });
 
@@ -102,7 +128,6 @@ client.on('message', async message => {
         console.log(`✅ Token sent to ${sender} | Serial: ${serial}`);
     } else {
         console.log(`❌ Serial not found: ${serial}`);
-        // لا يرسل أي رسالة
     }
 });
 
